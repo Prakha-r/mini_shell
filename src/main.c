@@ -1,0 +1,225 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <dirent.h>
+#include <sys/stat.h>
+
+#ifdef _WIN32
+    #define PATH_DELIMITER ';'
+#else
+    #define PATH_DELIMITER ':'
+#endif
+
+typedef struct matcher_output{
+  char * output_result;
+  int output_found;
+}matcher_output;
+
+matcher_output * matcher(char *source, char * to_find, int till, size_t source_size){  
+  // want to make this function hybrid like for both files and strings
+  if(source==NULL || (to_find==NULL&&till ==-1)) return NULL;
+  matcher_output * result = (matcher_output*)malloc(sizeof(matcher_output));
+  if(result == NULL) {
+    fprintf(stderr, "memory allocation error \n");
+    return NULL; 
+  }
+  result->output_result = NULL;
+  result->output_found = 0;
+  if(to_find == NULL && till != -1){
+    char * found = memchr(source, till, source_size);
+    if(!found) {
+      fprintf(stderr, "cannot find the given character\n");
+      free(result);
+      return result; 
+    }
+    size_t d_len = found - source;
+    result->output_result = malloc(d_len);
+    if(!result->output_result){
+      fprintf(stderr, "memory allocation error \n");
+      free(result);
+      return result;
+    } 
+    if(!memcpy(result->output_result, source, d_len)){
+      fprintf(stderr, "memcpy error\n");
+      free(result->output_result);
+      free(result);
+      return result;
+    }
+    result->output_found = 1;
+    return result;
+  } 
+  else if(to_find && till ==-1){
+    size_t tf_len = strlen(to_find);
+    int f_len = 0;
+    while(!result->output_found){
+      char * c = memchr(source, to_find[0], source_size);
+      char data[100] ={0};
+      data[0] = c[0];
+      f_len++;
+      if(c){
+        for(int i=1; i<tf_len; i++){
+          if(to_find[i] == c[i]){
+            f_len ++;
+            data[i] = c[i];
+          }
+          if(f_len==tf_len){
+            if(c[i+1] == ' ' ||c[i+1] == '\n'||c[i+1] == '\0'||c[i+1] == '\t'){
+              result->output_result = malloc(strlen(data)+1);
+              if(!result->output_result){
+                fprintf(stderr, "memory allocation error \n");
+                return result;
+              }
+              if(!memcpy(result->output_result, data, strlen(data)+1)){
+                fprintf(stderr, "memcpy error\n");
+                free(result->output_result);
+                free(result);
+                return result;
+              }
+              result->output_found = 1;
+              return result;
+            }
+            else{
+              int j=i+1;
+              while(c[j] != ' '&&c[j] != '\0'&&c[j] != '\t'&&c[j] != '\n'){
+                data[j] = c[j];
+                j++;
+              }
+              printf("Cannot find specific string \"%s\"\nFound = %s\n", to_find,data );
+              result->output_result = malloc(strlen(data));
+              if(!result->output_result){
+                fprintf(stderr, "memory allocation error \n");
+                return result;
+              }
+              if(!memcpy(result->output_result, data, strlen(data))){
+                fprintf(stderr, "memcpy error\n");
+                free(result->output_result);
+                free(result);
+                return result;
+              }
+              return result;
+            }
+          }
+        }
+      }
+      else{
+        printf("%s not found\n", to_find);
+      }
+    }
+  }
+}
+
+int type_path(char *m_ptr){
+  int found_exe = 0;
+  char *path_env = getenv("PATH");
+  if(!path_env){
+    fprintf(stderr, "getenv error \n");
+    return found_exe;
+  }
+  char *path_env_cpy = strdup(path_env);
+  char * path = strtok(path_env_cpy,(char[]){PATH_DELIMITER, '\0'}); //this seperates the string based on the delimeter 
+  while (path)
+  {
+    DIR *d;
+    struct dirent *dir;
+    struct stat info;
+    char file_path[FILENAME_MAX];
+    char *exe_name = NULL;
+    d = opendir(path);
+    printf("%s\n", path);
+    if(d!= NULL){
+      while((dir = readdir(d))!= NULL){
+        if(strcmp(dir->d_name,".")==0||strcmp(dir->d_name,"..")==0){
+          continue;
+        }
+        printf("%s\n", dir->d_name);
+        // printf("%d\n",strlen(m_ptr +strcspn(m_ptr, " ")+1) );
+        exe_name = strdup(dir->d_name);
+        char *dot = memchr(dir->d_name, '.', strlen(dir->d_name));
+        if(dot!= NULL){
+          //  exe_name = strtok(exe_name,"."); this is changing the state of previous strtok 
+          //  TODO
+        }
+        // printf("%s\n",exe_name);
+        if(strncmp(m_ptr +strcspn(m_ptr, " ")+1, exe_name,strlen(m_ptr)-(strcspn(m_ptr, " ")+1)) == 0 && strlen(m_ptr +strcspn(m_ptr, " ")+1)==strlen(exe_name)){
+          sprintf(file_path, "%s/%s",path,dir->d_name);
+          if(stat(file_path,&info)!=1){
+            printf("%o\n", info.st_mode); //print in octal mode
+          }
+          printf("%s\n",file_path );
+
+          found_exe =1;
+          break;
+        }
+      }
+    }
+    if(found_exe){
+      break;
+    }
+    path = strtok(NULL,(char[]){PATH_DELIMITER, '\0'}); //here we used null as when we use strtok the null means that start from the previously left place
+  }
+  free(path_env_cpy);
+}
+
+int main(int argc, char *argv[]) {
+  // Flush after every printf
+  char * source = "hello. world";
+  matcher_output *match = matcher(source, "hello", -1, strlen(source));
+  if(match){
+    if(match->output_result){
+      printf("%s\n",match->output_result );
+    }
+    else{
+      fprintf(stderr, "no output found\n");
+      return 1;
+    }
+  }
+  else{
+    fprintf(stderr, "matcher error\n");
+    return 1;
+  }
+  free(match->output_result);
+  free(match);
+  return 0;
+  
+  setbuf(stdout, NULL);
+  const char * builtins[100] ={"exit", "echo", "type"};
+  do
+  {
+    printf("$ ");
+    char command[256];
+    if(fgets(command, sizeof(command), stdin) != NULL){  //Retains newline character.
+      command[strcspn(command, "\n")] = '\0';
+      if(strncmp(command, "exit", 4)==0){
+        if((int)command[strcspn(command, " ")+1]-48 == 0){ // as the ascii equivalent of character 0 is 48 
+          exit(0);
+        }
+          exit(1);
+      }
+      else if(strncmp(command, "echo", 4)== 0){
+        printf("%s\n", command +strcspn(command, " ")+1);
+      }
+      else if(strncmp(command, "type", 4)== 0){
+        int length = sizeof(builtins) / sizeof(builtins[0]);
+        int found = 0;
+        char * m_ptr = command;
+        for(int i =0;i<length&&builtins[i]!=NULL;i++){
+          if(strcmp(m_ptr +strcspn(m_ptr, " ")+1, builtins[i]) == 0  ){
+            found = 1;
+            break;
+          }
+        }
+        if(found == 0){
+          int found_exe = type_path(m_ptr);
+          fprintf(stderr, "%s: not found\n", m_ptr+strcspn(m_ptr, " ")+1);
+        }
+        else{
+          printf("%s is a shell builtin\n", m_ptr+strcspn(m_ptr, " ")+1);
+        }
+      }
+      else{
+        fprintf(stderr, "%s: command not found\n", command);
+      }
+    }
+  }while(true);
+  return 0;
+}
