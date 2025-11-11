@@ -3,6 +3,7 @@
 #include <string.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <windows.h>
 
 #ifdef _WIN32
     #define PATH_DELIMITER ';'
@@ -33,7 +34,7 @@ matcher_output * matcher(char *source, char * to_find, int till, size_t source_s
       return result; 
     }
     size_t d_len = found - source;
-    result->output_result = malloc(d_len);
+    result->output_result = malloc(d_len+1);
     if(!result->output_result){
       fprintf(stderr, "memory allocation error \n");
       free(result);
@@ -45,6 +46,7 @@ matcher_output * matcher(char *source, char * to_find, int till, size_t source_s
       free(result);
       return result;
     }
+    result->output_result[d_len]= '\0';
     result->output_found = 1;
     return result;
   } 
@@ -85,12 +87,12 @@ matcher_output * matcher(char *source, char * to_find, int till, size_t source_s
                 j++;
               }
               printf("Cannot find specific string \"%s\"\nFound = %s\n", to_find,data );
-              result->output_result = malloc(strlen(data));
+              result->output_result = malloc(strlen(data)+1);
               if(!result->output_result){
                 fprintf(stderr, "memory allocation error \n");
                 return result;
               }
-              if(!memcpy(result->output_result, data, strlen(data))){
+              if(!memcpy(result->output_result, data, strlen(data)+1)){
                 fprintf(stderr, "memcpy error\n");
                 free(result->output_result);
                 free(result);
@@ -108,7 +110,7 @@ matcher_output * matcher(char *source, char * to_find, int till, size_t source_s
   }
 }
 
-int type_path(char *m_ptr){
+int type_path(char *m_ptr,char *out_path){
   int found_exe = 0;
   char *path_env = getenv("PATH");
   if(!path_env){
@@ -125,62 +127,80 @@ int type_path(char *m_ptr){
     char file_path[FILENAME_MAX];
     char *exe_name = NULL;
     d = opendir(path);
-    printf("%s\n", path);
     if(d!= NULL){
       while((dir = readdir(d))!= NULL){
         if(strcmp(dir->d_name,".")==0||strcmp(dir->d_name,"..")==0){
           continue;
         }
-        printf("%s\n", dir->d_name);
-        // printf("%d\n",strlen(m_ptr +strcspn(m_ptr, " ")+1) );
-        exe_name = strdup(dir->d_name);
         char *dot = memchr(dir->d_name, '.', strlen(dir->d_name));
         if(dot!= NULL){
-          //  exe_name = strtok(exe_name,"."); this is changing the state of previous strtok 
-          //  TODO
+          matcher_output *match = matcher(dir->d_name, NULL, '.', strlen(dir->d_name));
+          if(match){
+            if(!match->output_result){
+              fprintf(stderr, "not found\n");
+              free(path_env_cpy);
+              closedir(d);
+              return found_exe;
+            }
+          }
+          else{
+            fprintf(stderr, "matcher error\n");
+            free(path_env_cpy);
+            closedir(d);
+            return found_exe;
+          }
+          exe_name = malloc(strlen(match->output_result)+1);
+          if(!exe_name){
+            fprintf(stderr, "memory allocation error\n");
+            free(path_env_cpy);
+            return found_exe;
+          }
+          if(!strcpy(exe_name,match->output_result)){
+            fprintf(stderr, "error copying\n");
+            free(path_env_cpy);
+            closedir(d);
+            return found_exe;
+          }
+          free(match->output_result);
+          free(match);
         }
-        // printf("%s\n",exe_name);
-        if(strncmp(m_ptr +strcspn(m_ptr, " ")+1, exe_name,strlen(m_ptr)-(strcspn(m_ptr, " ")+1)) == 0 && strlen(m_ptr +strcspn(m_ptr, " ")+1)==strlen(exe_name)){
+        else{
+          exe_name = malloc(strlen(dir->d_name)+1);
+          if(!strcpy(exe_name,dir->d_name)){
+            fprintf(stderr, "error copying\n");
+            free(path_env_cpy);
+            closedir(d);
+            return found_exe;
+          }
+        }
+        if(strcmp(m_ptr +strcspn(m_ptr, " ")+1, exe_name) == 0 && strlen(m_ptr +strcspn(m_ptr, " ")+1)==strlen(exe_name)){
           sprintf(file_path, "%s/%s",path,dir->d_name);
           if(stat(file_path,&info)!=1){
-            printf("%o\n", info.st_mode); //print in octal mode
+            if (info.st_mode & S_IXUSR) {
+              strcpy(out_path,file_path);
+              found_exe =1;
+              break;
+            }
           }
-          printf("%s\n",file_path );
-
-          found_exe =1;
-          break;
+        }
+        if (exe_name) {
+          free(exe_name);
+          exe_name = NULL;
         }
       }
     }
+    closedir(d);
     if(found_exe){
       break;
     }
     path = strtok(NULL,(char[]){PATH_DELIMITER, '\0'}); //here we used null as when we use strtok the null means that start from the previously left place
   }
   free(path_env_cpy);
+  return found_exe;
 }
 
 int main(int argc, char *argv[]) {
   // Flush after every printf
-  char * source = "hello. world";
-  matcher_output *match = matcher(source, "hello", -1, strlen(source));
-  if(match){
-    if(match->output_result){
-      printf("%s\n",match->output_result );
-    }
-    else{
-      fprintf(stderr, "no output found\n");
-      return 1;
-    }
-  }
-  else{
-    fprintf(stderr, "matcher error\n");
-    return 1;
-  }
-  free(match->output_result);
-  free(match);
-  return 0;
-  
   setbuf(stdout, NULL);
   const char * builtins[100] ={"exit", "echo", "type"};
   do
@@ -209,8 +229,14 @@ int main(int argc, char *argv[]) {
           }
         }
         if(found == 0){
-          int found_exe = type_path(m_ptr);
-          fprintf(stderr, "%s: not found\n", m_ptr+strcspn(m_ptr, " ")+1);
+          char path[FILENAME_MAX]={0};
+          int found_exe = type_path(m_ptr,path);
+          if(found_exe &&found == 0){
+            printf("%s is %s\n", m_ptr+strcspn(m_ptr, " ")+1, path);
+          }
+          else{
+            fprintf(stderr, "%s: not found\n", m_ptr+strcspn(m_ptr, " ")+1);
+          }
         }
         else{
           printf("%s is a shell builtin\n", m_ptr+strcspn(m_ptr, " ")+1);
