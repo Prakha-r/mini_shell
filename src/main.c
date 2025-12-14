@@ -3,112 +3,13 @@
 #include <string.h>
 #include <dirent.h>
 #include <sys/stat.h>
-#include <windows.h>
+#include "matcher.h"
 
 #ifdef _WIN32
     #define PATH_DELIMITER ';'
 #else
     #define PATH_DELIMITER ':'
 #endif
-
-typedef struct matcher_output{
-  char * output_result;
-  int output_found;
-}matcher_output;
-
-matcher_output * matcher(char *source, char * to_find, int till, size_t source_size){  
-  // want to make this function hybrid like for both files and strings
-  if(source==NULL || (to_find==NULL&&till ==-1)) return NULL;
-  matcher_output * result = (matcher_output*)malloc(sizeof(matcher_output));
-  if(result == NULL) {
-    fprintf(stderr, "memory allocation error \n");
-    return NULL; 
-  }
-  result->output_result = NULL;
-  result->output_found = 0;
-  if(to_find == NULL && till != -1){
-    char * found = memchr(source, till, source_size);
-    if(!found) {
-      fprintf(stderr, "cannot find the given character\n");
-      free(result);
-      return result; 
-    }
-    size_t d_len = found - source;
-    result->output_result = malloc(d_len+1);
-    if(!result->output_result){
-      fprintf(stderr, "memory allocation error \n");
-      free(result);
-      return result;
-    } 
-    if(!memcpy(result->output_result, source, d_len)){
-      fprintf(stderr, "memcpy error\n");
-      free(result->output_result);
-      free(result);
-      return result;
-    }
-    result->output_result[d_len]= '\0';
-    result->output_found = 1;
-    return result;
-  } 
-  else if(to_find && till ==-1){
-    size_t tf_len = strlen(to_find);
-    int f_len = 0;
-    while(!result->output_found){
-      char * c = memchr(source, to_find[0], source_size);
-      char data[100] ={0};
-      data[0] = c[0];
-      f_len++;
-      if(c){
-        for(int i=1; i<tf_len; i++){
-          if(to_find[i] == c[i]){
-            f_len ++;
-            data[i] = c[i];
-          }
-          if(f_len==tf_len){
-            if(c[i+1] == ' ' ||c[i+1] == '\n'||c[i+1] == '\0'||c[i+1] == '\t'){
-              result->output_result = malloc(strlen(data)+1);
-              if(!result->output_result){
-                fprintf(stderr, "memory allocation error \n");
-                return result;
-              }
-              if(!memcpy(result->output_result, data, strlen(data)+1)){
-                fprintf(stderr, "memcpy error\n");
-                free(result->output_result);
-                free(result);
-                return result;
-              }
-              result->output_found = 1;
-              return result;
-            }
-            else{
-              int j=i+1;
-              while(c[j] != ' '&&c[j] != '\0'&&c[j] != '\t'&&c[j] != '\n'){
-                data[j] = c[j];
-                j++;
-              }
-              printf("Cannot find specific string \"%s\"\nFound = %s\n", to_find,data );
-              result->output_result = malloc(strlen(data)+1);
-              if(!result->output_result){
-                fprintf(stderr, "memory allocation error \n");
-                return result;
-              }
-              if(!memcpy(result->output_result, data, strlen(data)+1)){
-                fprintf(stderr, "memcpy error\n");
-                free(result->output_result);
-                free(result);
-                return result;
-              }
-              return result;
-            }
-          }
-        }
-      }
-      else{
-        printf("%s not found\n", to_find);
-      }
-    }
-  }
-}
 
 int type_path(char *m_ptr,char *out_path){
   int found_exe = 0;
@@ -134,7 +35,7 @@ int type_path(char *m_ptr,char *out_path){
         }
         char *dot = memchr(dir->d_name, '.', strlen(dir->d_name));
         if(dot!= NULL){
-          matcher_output *match = matcher(dir->d_name, NULL, '.', strlen(dir->d_name));
+          matcher_output *match = get_till_char(dir->d_name, '.', strlen(dir->d_name));
           if(match){
             if(!match->output_result){
               fprintf(stderr, "not found\n");
@@ -161,8 +62,7 @@ int type_path(char *m_ptr,char *out_path){
             closedir(d);
             return found_exe;
           }
-          free(match->output_result);
-          free(match);
+          free_and_null(&match);
         }
         else{
           exe_name = malloc(strlen(dir->d_name)+1);
