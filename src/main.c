@@ -110,6 +110,7 @@ int main(int argc, char *argv[]) {
     if(fgets(command, sizeof(command), stdin) != NULL){  //Retains newline character.
       command[strcspn(command, "\n")] = '\0';
       if(strncmp(command, "exit", 4)==0){
+       //the exit logic is not fully correct see <https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html#exit>
         if((int)command[strcspn(command, " ")+1]-48 == 0){ // as the ascii equivalent of character 0 is 48 
           exit(0);
         }
@@ -142,6 +143,7 @@ int main(int argc, char *argv[]) {
           printf("%s is a shell builtin\n", m_ptr+strcspn(m_ptr, " ")+1);
         }
       }
+      else if()
       else{
         fprintf(stderr, "%s: command not found\n", command);
       }
